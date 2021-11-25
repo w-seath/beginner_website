@@ -1,0 +1,66 @@
+# QuantConnect
+
+Today I made my first trading algorithm in a long time, following the closure of Quantopian. Following TradeOptionswithMe's fantastic 
+course, which can be found here.
+
+https://www.youtube.com/watch?v=WQwyKfef80k&list=PLtqRgJ_TIq8Y6YG8G-ETIFW_36mvxMLad&index=4
+
+The algorithm is an incredibly simple one:
+1. Buy SPY with our entire cash holding:
+2. Exit our position with a 10% take-profit or 10% stop-loss.
+3. Wait 31 days
+4. Go to step 1.
+
+This is the algorithm.
+```
+# An algorithm that buys SPY, with a take-profit and a stop-loss, then waits a fixed period of time before entering the market. 
+
+class MuscularBrownTapir(QCAlgorithm):
+
+    def Initialize(self):
+        self.SetStartDate(2020, 1, 1) # Set start date
+        self.SetEndDate(2021, 1, 1) # Set end date
+        self.SetCash(100000) # Set starting cash
+    
+        # Set the trading security and the LEAN resolution, not recommneded to go lower than minute resolution as messy and computationally expensive    
+        spy = self.AddEquity("SPY", Resolution.Daily) 
+        # self.AddForex, self.AddFuture,...
+        
+        # Set the data normalisation adjustment mode
+        spy.SetDataNormalizationMode(DataNormalizationMode.Raw)
+        
+        # Save the SPY symbol for reference
+        self.spy = spy.Symbol
+        
+        # Set the benchmark for backtesting
+        self.SetBenchmark("SPY")
+        
+        # set brokerage model
+        self.SetBrokerageModel(BrokerageName.InteractiveBrokersBrokerage, AccountType.Margin)
+        
+        self.entryPrice = 0 # the price at which we enter the market
+        self.period = timedelta(31) # how long before we enter the market again
+        self.nextEntryTime = self.Time # when we will enter the market again 
+    
+    
+    def OnData(self, data):
+        # these two lines navigate not having spy data, which is not useful here but is if we are dynamically adding data or in very lowly traded securities. 
+        if not self.spy in data:
+            return 
+        
+        # price = data.Bars[self.spy].Close # Note the below all do the same thing. The third method has (maybe?) computational advantage as we only have to look inside our already initialized universe
+        price = data[self.spy].Close
+        # price = self.Securities[self.spy].Close
+        
+        if not self.Portfolio[self.spy].Invested: # in this instance, could remove [self.spy], but good practise
+            if self.nextEntryTime <= self.Time:
+                self.SetHoldings(self.spy, 1) # set the portfolio weight 
+                # self.MarketOrder(self.spy, int((self.Portfolio.Cash / price)  ) # note that negative size orders are interpretted as sell orders
+                self.Log("BUY SPY @" + str(price))
+                self.entryPrice = price
+                
+        elif self.entryPrice * 1.1 < price or self.entryPrice * 0.9 > price:
+            self.Liquidate(self.spy)
+            self.Log("SELL SPY @" + str(price))
+            self.nextEntryTime = self.Time + self.period
+```
